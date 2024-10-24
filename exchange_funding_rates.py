@@ -3,6 +3,7 @@ import time
 import pandas as pd
 from datetime import datetime, timedelta
 
+LARGE_GRAPHS = True
 
 # Function to calculate APY from the 8-hour funding rate
 def calculate_apy_from_8hr_funding_rate(funding_rate_8hr):
@@ -38,6 +39,9 @@ def calculate_7day_average_funding_rate(funding_rate_history):
 # Function to get the most recent funding rate
 def get_most_recent_funding_rate(funding_rate_history):
     return funding_rate_history[-1]['fundingRate'] if funding_rate_history else None
+
+def calculate_apy_history(funding_rate_history):
+    return [calculate_apy_from_8hr_funding_rate(rate['fundingRate']) for rate in funding_rate_history]
 
 
 # Function to calculate and display results for a list of exchanges and markets
@@ -88,28 +92,57 @@ def display_results(exchanges_symbols):
                 'APY': 'N/A',
                 'Historical APY': [None]
             })
-        time.sleep(3)
+        # time.sleep(3)
 
     # Convert to DataFrame
     df = pd.DataFrame(data)
 
     return df
 
+# Function to display charts for each exchange/market
+def display_charts(exchanges_symbols):
+    for exchange, symbol in exchanges_symbols:
+        try:
+            # Fetch the historical funding rates
+            funding_rate_history = get_funding_rate_history(exchange, symbol)
+
+            # Get the most recent funding rate and APY
+            most_recent_rate = get_most_recent_funding_rate(funding_rate_history)
+            most_recent_apy = calculate_apy_from_8hr_funding_rate(most_recent_rate)
+
+            # Calculate the APY history based on the funding rates
+            apy_history = calculate_apy_history(funding_rate_history)
+            historical_dates = [entry['datetime'] for entry in funding_rate_history]
+
+            # Add title with exchange name, most recent funding rate, and APY
+            st.subheader(f"{exchange.capitalize()} - Funding Rate: {100*most_recent_rate:.4f}% APY: {most_recent_apy:.2f}%")
+
+            # Create a line chart for the APY history
+            st.line_chart(pd.DataFrame({
+                'APY (%)': apy_history
+            }, index=pd.to_datetime(historical_dates)))
+
+        except Exception as e:
+            st.error(f"Error fetching data for {exchange.capitalize()} - {symbol}: {e}")
+
+
+
 # Main function for standalone script mode
 def main():
     # Define the exchanges and symbols you want to check
     exchanges_symbols = [
-        ('krakenfutures', 'TAO/USD:USD'),
+        # ('krakenfutures', 'TAO/USD:USD'),
         ('binance', 'TAO/USDT:USDT'),
         # ('deribit', 'ETH/USDC:USDC'),
         ('bybit', 'TAO/USDT:USDT'),
-        ('okx', 'TAO/USDT:USDT')
+        # ('okx', 'TAO/USDT:USDT')
     ]
 
     # Iterate over each exchange and symbol and display the results
     df = display_results(exchanges_symbols)
     print(df.to_string(index=False))
     # render_table_with_sparklines(df)
+
 
 
 # Streamlit UI
@@ -120,25 +153,30 @@ if __name__ == '__main__':
         print('running streamlit')
         import streamlit as st
 
-        st.set_page_config(layout="wide")
+        # st.set_page_config(layout="wide")
         st.title("Perpetual Futures APY Calculator")
         st.text("Positive funding rate / apy; Longs pay shorts")
 
         # Define available exchanges and markets
         exchanges_symbols = [
-            ('krakenfutures', 'TAO/USD:USD'),
+            # ('krakenfutures', 'TAO/USD:USD'),
             ('binance', 'TAO/USDT:USDT'),
             # ('deribit', 'ETH/USDC:USDC'),
             ('bybit', 'TAO/USDT:USDT'),
-            ('okx', 'TAO/USDT:USDT')
+            # ('okx', 'TAO/USDT:USDT')
         ]
 
-        # Automatically fetch and display results for all exchanges
-        df = display_results(exchanges_symbols)
-        st.dataframe(df, column_config={
-            "Historical APY": st.column_config.LineChartColumn("Historical APY", width="medium")
-        })
-        # render_table_with_sparklines(df)
+        # Display charts for each exchange
+
+        if LARGE_GRAPHS:
+            display_charts(exchanges_symbols)
+        else:
+            # Automatically fetch and display results for all exchanges
+            df = display_results(exchanges_symbols)
+            st.dataframe(df, column_config={
+                "Historical APY": st.column_config.LineChartColumn("Historical APY", width="medium")
+            })
+
     else:
         print("not running in streamlit")
         main()  # Runs in PyCharm or any other standard Python environment

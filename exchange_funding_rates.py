@@ -76,7 +76,7 @@ def display_results(exchanges_symbols):
                     'Most Recent Funding Rate (8hr)': 'N/A',
                     '7-Day Avg Funding Rate (8hr)': 'N/A',
                     'APY': 'N/A',
-                    'Historical APY': 'N/A'
+                    'Historical APY': [None]
                 })
         except Exception as e:
             data.append({
@@ -85,7 +85,7 @@ def display_results(exchanges_symbols):
                 'Most Recent Funding Rate (8hr)': 'N/A',
                 '7-Day Avg Funding Rate (8hr)': 'N/A',
                 'APY': 'N/A',
-                'Historical APY': 'N/A'
+                'Historical APY': [None]
             })
 
     # Convert to DataFrame

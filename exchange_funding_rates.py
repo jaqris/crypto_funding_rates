@@ -1,45 +1,143 @@
 import ccxt
-import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
 
 
-def calculate_apy_from_funding_rate(funding_rate, funding_frequency):
-    """
-    Calculate the APY (Annual Percentage Yield) from the funding rate and funding frequency.
-    """
-    daily_rate = (1 + funding_rate) ** funding_frequency - 1
-    yearly_rate = (1 + daily_rate) ** 365 - 1  # 365 days in a year
-    return yearly_rate * 100  # Convert to percentage
+# Function to calculate APY from the 8-hour funding rate
+def calculate_apy_from_8hr_funding_rate(funding_rate_8hr):
+    funding_frequency_per_day = 3  # 3 funding periods per day (every 8 hours)
+    daily_rate = (1 + funding_rate_8hr) ** funding_frequency_per_day - 1
+    yearly_rate = (1 + daily_rate) ** 365 - 1  # Compounded daily for a year
+    return yearly_rate * 100  # Return as percentage
 
 
-def get_kraken_funding_rate():
-    """
-    Fetch the funding rate for Kraken ETH/USD perpetual futures market.
-    """
-    kraken_futures = ccxt.krakenfutures()
-
-    # Load markets and select the perpetual ETH/USD market
-    markets = kraken_futures.load_markets()
-    symbol = 'ETH/USD:USD'
-
+# Function to fetch historical funding rate from a given exchange for the last 7 days
+def get_funding_rate_history(exchange, symbol):
+    exchange_class = getattr(ccxt, exchange)()
+    markets = exchange_class.load_markets()
     if symbol in markets:
-        funding_rate_info = kraken_futures.fetch_funding_rate(symbol)
-        funding_rate = funding_rate_info['fundingRate']
-        return funding_rate
+        now = datetime.utcnow()
+        seven_days_ago = now - timedelta(days=7)
+        seven_days_ago_ms = int(seven_days_ago.timestamp() * 1000)  # Convert to milliseconds
+        funding_rate_history = exchange_class.fetch_funding_rate_history(symbol, since=seven_days_ago_ms)
+        return funding_rate_history
     else:
-        raise ValueError(f"Market {symbol} not found on Kraken Futures.")
+        raise ValueError(f"Market {symbol} not found on {exchange}.")
+
+
+# Function to calculate the 7-day average funding rate
+def calculate_7day_average_funding_rate(funding_rate_history):
+    last_7_days_rates = [entry['fundingRate'] for entry in funding_rate_history]
+    if last_7_days_rates:
+        return sum(last_7_days_rates) / len(last_7_days_rates)
+    else:
+        return None
+
+
+# Function to get the most recent funding rate
+def get_most_recent_funding_rate(funding_rate_history):
+    return funding_rate_history[-1]['fundingRate'] if funding_rate_history else None
+
+
+# Function to calculate and display results for a list of exchanges and markets
+def display_results(exchanges_symbols):
+    data = []
+
+    for exchange, symbol in exchanges_symbols:
+        try:
+            funding_rate_history = get_funding_rate_history(exchange, symbol)
+            avg_funding_rate_7d = calculate_7day_average_funding_rate(funding_rate_history)
+            most_recent_rate = get_most_recent_funding_rate(funding_rate_history)
+            historical_rates = [entry['fundingRate'] for entry in funding_rate_history]
+            historical_dates = [entry['datetime'] for entry in funding_rate_history]  # Grab the datetime for the x-axis
+
+            historical_apy = [calculate_apy_from_8hr_funding_rate(rate) for rate in historical_rates]
+
+            if avg_funding_rate_7d is not None:
+                apy = calculate_apy_from_8hr_funding_rate(most_recent_rate)
+                data.append({
+                    'Exchange': exchange.capitalize(),
+                    'Market': symbol,
+                    'Most Recent Funding Rate (8hr)': f"{100*most_recent_rate:.4f}%",
+                    '7-Day Avg Funding Rate (8hr)': f"{100*avg_funding_rate_7d:.4f}%",
+                    'APY': f"{apy:.2f}%",
+                    'Historical APY': historical_apy
+                })
+
+                # # Visualize the funding rate history as a line chart
+                # st.line_chart(pd.DataFrame({
+                #     'Funding Rate': historical_rates
+                # }, index=pd.to_datetime(historical_dates)))
+
+            else:
+                data.append({
+                    'Exchange': exchange.capitalize(),
+                    'Market': symbol,
+                    'Most Recent Funding Rate (8hr)': 'N/A',
+                    '7-Day Avg Funding Rate (8hr)': 'N/A',
+                    'APY': 'N/A',
+                    'Historical APY': 'N/A'
+                })
+        except Exception as e:
+            data.append({
+                'Exchange': exchange.capitalize(),
+                'Market': symbol,
+                'Most Recent Funding Rate (8hr)': 'N/A',
+                '7-Day Avg Funding Rate (8hr)': 'N/A',
+                'APY': 'N/A',
+                'Historical APY': 'N/A'
+            })
+
+    # Convert to DataFrame
+    df = pd.DataFrame(data)
+
+    return df
+
+# Main function for standalone script mode
+def main():
+    # Define the exchanges and symbols you want to check
+    exchanges_symbols = [
+        ('krakenfutures', 'TAO/USD:USD'),
+        ('binance', 'TAO/USDT:USDT'),
+        # ('deribit', 'ETH/USDC:USDC'),
+        ('bybit', 'TAO/USDT:USDT'),
+        ('okx', 'TAO/USDT:USDT')
+    ]
+
+    # Iterate over each exchange and symbol and display the results
+    df = display_results(exchanges_symbols)
+    print(df.to_string(index=False))
+    # render_table_with_sparklines(df)
 
 
 # Streamlit UI
-st.title("Kraken ETH/USD Perpetual Futures APY Calculator")
+if __name__ == '__main__':
+    import sys
 
-funding_frequency = 3  # Kraken charges funding every 8 hours
+    if "streamlit" in sys.modules:
+        print('running streamlit')
+        import streamlit as st
 
-if st.button('Calculate APY'):
-    try:
-        funding_rate = get_kraken_funding_rate()
-        apy = calculate_apy_from_funding_rate(funding_rate, funding_frequency)
+        st.set_page_config(layout="wide")
+        st.title("Perpetual Futures APY Calculator")
+        st.text("Positive funding rate / apy; Longs pay shorts")
 
-        st.write(f"Funding Rate: {funding_rate:.6f}")
-        st.write(f"Annual Percentage Yield (APY): {apy:.2f}%")
-    except Exception as e:
-        st.error(f"Error: {e}")
+        # Define available exchanges and markets
+        exchanges_symbols = [
+            ('krakenfutures', 'TAO/USD:USD'),
+            ('binance', 'TAO/USDT:USDT'),
+            # ('deribit', 'ETH/USDC:USDC'),
+            ('bybit', 'TAO/USDT:USDT'),
+            ('okx', 'TAO/USDT:USDT')
+        ]
+
+        # Automatically fetch and display results for all exchanges
+        df = display_results(exchanges_symbols)
+        st.dataframe(df, column_config={
+            "Historical APY": st.column_config.LineChartColumn("Historical APY", width="medium")
+        })
+        # render_table_with_sparklines(df)
+    else:
+        print("not running in streamlit")
+        main()  # Runs in PyCharm or any other standard Python environment
+

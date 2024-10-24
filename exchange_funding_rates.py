@@ -1,4 +1,5 @@
 import ccxt
+import time
 import pandas as pd
 from datetime import datetime, timedelta
 
@@ -87,6 +88,7 @@ def display_results(exchanges_symbols):
                 'APY': 'N/A',
                 'Historical APY': [None]
             })
+        time.sleep(3)
 
     # Convert to DataFrame
     df = pd.DataFrame(data)
@@ -141,3 +143,5 @@ if __name__ == '__main__':
         print("not running in streamlit")
         main()  # Runs in PyCharm or any other standard Python environment
 
+
+# TODO: There's some issue when running on production that data for some exchanges isn't fetched fast enough
